@@ -113,6 +113,8 @@ class ManoLayer(Module):
                 th_trans=torch.zeros(1),
                 root_palm=torch.Tensor([0]),
                 share_betas=torch.Tensor([0]),
+                return_all_trans_global=False,
+                return_meters=False,
                 ):
         """
         Args:
@@ -181,9 +183,12 @@ class ManoLayer(Module):
             th_v_shaped = torch.matmul(self.th_shapedirs,
                                        th_betas.transpose(1, 0)).permute(
                                            2, 0, 1) + self.th_v_template
-            th_j = torch.matmul(self.th_J_regressor, th_v_shaped)
+            th_j = torch.matmul(self.th_J_regressor, th_v_shaped)  # [:, 48] => [:, 16*9]
             # th_pose_map should have shape 20x135
 
+        # Compute rotation matrices from the axis-angle with skipping global rotation
+        # th_pose_map is of shape [:, 16*9]; th_rot_map is of shape [:, 16*9]
+        # th_pose_map = th_rot_map - I (Why?); Because posedirs need the no identity matrix results
         th_v_posed = th_v_shaped + torch.matmul(
             self.th_posedirs, th_pose_map.transpose(0, 1)).permute(2, 0, 1)
         # Final T pose with transformation done !
@@ -224,10 +229,15 @@ class ManoLayer(Module):
         lev3_rel_transform_flt = th_with_zeros(torch.cat([lev3_rots, lev3_j_rel.unsqueeze(3)], 3).view(-1, 3, 4))
         lev3_flt = torch.matmul(lev2_flt, lev3_rel_transform_flt)
         all_transforms.append(lev3_flt.view(all_rots.shape[0], 5, 4, 4))
-
-        reorder_idxs = [0, 1, 6, 11, 2, 7, 12, 3, 8, 13, 4, 9, 14, 5, 10, 15]
-        th_results = torch.cat(all_transforms, 1)[:, reorder_idxs]
-        th_results_global = th_results
+        reorder_idxs = [0,          # root
+                        1, 6, 11,   # index
+                        2, 7, 12,   # middle 
+                        3, 8, 13,   # little
+                        4, 9, 14,   # ring
+                        5, 10, 15   # thumb
+                        ]
+        th_results = torch.cat(all_transforms, 1)[:, reorder_idxs] # [:, 16, 4, 4]
+        th_results_global = th_results # [:, 16, 4, 4] T_world_joint
 
         joint_js = torch.cat([th_j, th_j.new_zeros(th_j.shape[0], 16, 1)], 2)
         tmp2 = torch.matmul(th_results, joint_js.unsqueeze(3))
@@ -269,6 +279,17 @@ class ManoLayer(Module):
             th_verts = th_verts + th_trans.unsqueeze(1)
 
         # Scale to milimeters
-        th_verts = th_verts * 1000
-        th_jtr = th_jtr * 1000
+        unit = 1 if return_meters else 1000
+        th_verts = th_verts * unit
+        th_jtr = th_jtr * unit
+        
+        # Compute T_world_joints
+        if return_all_trans_global:
+            th_results_global_final = th_results_global.clone() 
+            th_trans_global = th_trans.unsqueeze(1).repeat(1, 16, 1) # [:, 3] => [:, 16, 3]
+            th_results_global_final[..., :3, 3] = th_results_global_final[..., :3, 3] + th_trans_global
+            th_results_global_final[..., :3, 3] = th_results_global_final[..., :3, 3] * unit
+            return th_verts, th_jtr, th_results_global_final
+
         return th_verts, th_jtr
+

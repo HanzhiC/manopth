@@ -6,7 +6,7 @@
 __pycache__/
 build/
 dist/
-manopth_hassony2.egg-info/
+manopth.egg-info/
 
 mano/models
 assets/mano_layer.svg
