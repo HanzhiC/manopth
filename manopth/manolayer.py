@@ -114,7 +114,7 @@ class ManoLayer(Module):
                 root_palm=torch.Tensor([0]),
                 share_betas=torch.Tensor([0]),
                 return_all_trans_global=False,
-                return_meters=False,
+                in_meters=False,
                 ):
         """
         Args:
@@ -279,7 +279,7 @@ class ManoLayer(Module):
             th_verts = th_verts + th_trans.unsqueeze(1)
 
         # Scale to milimeters
-        unit = 1 if return_meters else 1000
+        unit = 1 if in_meters else 1000
         th_verts = th_verts * unit
         th_jtr = th_jtr * unit
         
